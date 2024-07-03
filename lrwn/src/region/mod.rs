@@ -752,6 +752,42 @@ impl RegionBaseConfig {
         Some(CFList::ChannelMask(CFListChannelMasks::new(masks)))
     }
 
+    // ts-lora implementation
+    // only one channel is activated for a device. The rest must remain unavailable
+    fn custom_get_link_adr_req_payloads_for_enabled_uplink_channel_indices(
+        &self,
+        device_enabled_channels: &[usize],
+    ) -> Vec<LinkADRReqPayload> {
+        let enabled_channel_index = device_enabled_channels[0] as usize; // Only one index is always stored.
+
+        println!("in custom_get_link_adr_req_payloads_for_enabled_uplink_channel_indices enabled_channel_index is {}", enabled_channel_index);
+        // Create a channel mask with all channels disabled except for the enabled one.
+        let mut channel_mask_bits: [bool; 16] = [false; 16];
+        channel_mask_bits[enabled_channel_index % 16] = true;
+
+        // Create the Channel Mask
+        let channel_mask = ChMask::new(channel_mask_bits);
+
+        // Configure redundancy for 1st block: no special control, and default retransmission.
+        let redundancy = Redundancy {
+            ch_mask_cntl: 0,
+            nb_rep: 1,
+        };
+
+        // Create the payload.
+        let link_adr_req_payload = LinkADRReqPayload {
+            dr: 0,
+            tx_power: 0,
+            ch_mask: channel_mask,
+            redundancy,
+        };
+
+        let mut out: Vec<LinkADRReqPayload> = Vec::new();
+        out.push(link_adr_req_payload);
+
+        out
+    }
+
     fn get_link_adr_req_payloads_for_enabled_uplink_channel_indices(
         &self,
         device_enabled_channels: &[usize],

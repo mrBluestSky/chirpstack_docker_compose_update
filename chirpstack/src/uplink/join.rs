@@ -25,7 +25,7 @@ use crate::storage::{
     device::{self, DeviceClass},
     device_keys, device_profile, device_queue,
     error::Error as StorageError,
-    helpers::get_all_device_data,
+    helpers::{get_all_device_data, get_multicast_group_index},
     metrics, tenant,
 };
 use crate::{config, devaddr::get_random_dev_addr_slot, downlink, integration, region, stream};
@@ -774,6 +774,10 @@ impl JoinRequest {
         let device = self.device.as_mut().unwrap();
         let device_profile = self.device_profile.as_ref().unwrap();
 
+        // map multicast group index to channel index
+        let multicast_group_index = get_multicast_group_index(device.dev_eui).await?;
+        println!("Multicast group index is {} for dev_eui {}", multicast_group_index, device.dev_eui);
+
         let mut ds = internal::DeviceSession {
             region_config_id: self.uplink_frame_set.region_config_id.clone(),
             dev_addr: device.dev_addr.unwrap().to_be_bytes().to_vec(),
@@ -786,16 +790,22 @@ impl JoinRequest {
             rx1_dr_offset: region_network.rx1_dr_offset.into(),
             rx2_dr: region_network.rx2_dr.into(),
             rx2_frequency: region_conf.get_defaults().rx2_frequency,
-            enabled_uplink_channel_indices: region_conf
-                .get_default_uplink_channel_indices()
-                .iter()
-                .map(|i| *i as u32)
-                .collect(),
+            // enabled_uplink_channel_indices: region_conf
+            //     .get_default_uplink_channel_indices()
+            //     .iter()
+            //     .map(|i| *i as u32)
+            //     .collect(),
+            enabled_uplink_channel_indices: vec![multicast_group_index as u32],
             skip_f_cnt_check: device.skip_fcnt_check,
             ..Default::default()
         };
 
         device_profile.reset_session_to_boot_params(&mut ds);
+
+        println!("in set_device_session: enabled channels for device {}", device.dev_eui);
+        for ch in ds.enabled_uplink_channel_indices.clone().into_iter() {
+            println!("{}", ch);
+        }
 
         match region_conf.get_cf_list(device_profile.mac_version) {
             Some(CFList::Channels(channels)) => {
