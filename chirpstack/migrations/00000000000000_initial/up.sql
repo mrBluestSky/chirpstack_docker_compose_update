@@ -232,6 +232,7 @@ CREATE TABLE device_slot (
     dev_eui bytea primary key references device on delete cascade,
     dev_addr bytea,
     slot integer,
+    multicast_group_id uuid references multicast_group on delete cascade,
     created_at timestamp with time zone not null
 );
 

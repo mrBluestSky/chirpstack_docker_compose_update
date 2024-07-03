@@ -85,6 +85,7 @@ diesel::table! {
         dev_eui -> Bytea,
         dev_addr -> Nullable<Bytea>,
         slot -> Nullable<Int4>, 
+        multicast_group_id -> Uuid,
         created_at -> Timestamptz,
     }
 }

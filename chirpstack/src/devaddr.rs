@@ -1,17 +1,24 @@
 // This file has been modified to support ts-lora
-use rand::seq::SliceRandom;
-use rand::RngCore;
-use lrwn::{DevAddr, EUI64};
+use anyhow::Result;
+use chrono::Utc;
 use diesel::prelude::*;
 use diesel_async::RunQueryDsl;
-use chrono::Utc;
-use crate::storage::schema::{device, application, tenant, device_slot as schema_device_slot};
+use lrwn::{DevAddr, EUI64};
+use rand::seq::SliceRandom;
+use rand::RngCore;
+use sha2::{Digest, Sha256};
+// use std::convert::TryInto;
+// use tracing::info;
+use num_bigint::BigUint;
+use uuid::Uuid;
 
-use crate::storage::device_slot;
 use crate::config;
-use crate::storage::get_async_db_conn;
-use anyhow::{Result, Error};
-use tracing::info;
+use crate::storage::device_slot;
+use crate::storage::device_slot::DeviceSlot;
+use crate::storage::schema::{
+    application, device, device_slot as schema_device_slot, multicast_group_device, tenant,
+};
+use crate::storage::{get_async_db_conn, AsyncPgPoolConnection};
 
 const NUMBER_OF_SLOTS: u32 = 64;
 static mut CURRENT_SLOT: u32 = 0;
@@ -19,177 +26,153 @@ static mut CURRENT_SLOT: u32 = 0;
 pub async fn get_random_dev_addr_slot(dev_eui: EUI64) -> Result<DevAddr> {
     let mut conn = get_async_db_conn().await?;
 
-    // Generate a new DevAddr always
-    let new_dev_addr = generate_dev_addr().await?;
-
-    // Check if the device already has a slot and address
-    if let Ok(existing_slot) = device_slot::get(&dev_eui).await {
-        // Check if the existing slot is more than a day old
-        if Utc::now().signed_duration_since(existing_slot.created_at).num_days() < 1 {
-            info!(
-                dev_eui = %dev_eui,
-                slot = existing_slot.slot,
-                "Device already has an assigned slot within the last day"
-            );
-            return match existing_slot.dev_addr {
-                Some(_dev_addr) => Ok(new_dev_addr),
-                None => Err(Error::msg("Device address not found".to_string())),
-            };
-        }
-    }
-
-    // Fetch the max_slot_count from the tenant based on dev_eui
-    let max_slot_count_result = device::table
+    // Fetch multicast group ID and max slot count
+    let multicast_group_id: Uuid = multicast_group_device::table
+        .filter(multicast_group_device::dsl::dev_eui.eq(dev_eui))
+        .select(multicast_group_device::dsl::multicast_group_id)
+        .first(&mut conn)
+        .await?;
+    let max_slot_count = device::table
         .inner_join(application::table.on(application::dsl::id.eq(device::dsl::application_id)))
         .inner_join(tenant::table.on(tenant::dsl::id.eq(application::dsl::tenant_id)))
         .select(tenant::dsl::max_slot_count)
         .filter(device::dsl::dev_eui.eq(dev_eui))
         .first::<i32>(&mut conn)
-        .await;
-
-    // Check the result and convert accordingly
-    let max_slot_count = match max_slot_count_result {
-        Ok(count) => if count == 0 { 64u32 } else { count as u32 }, // Convert directly here
-        Err(e) => return Err(Error::msg(format!("Failed to fetch max slot count for device {}: {}", dev_eui.to_string(), e))),
-    };
-    
-    let used_slots: Vec<Option<i32>> = schema_device_slot::table
-        .select(schema_device_slot::dsl::slot)
-        .load::<Option<i32>>(&mut conn)
         .await?;
-    
-    // Filter out None values and collect into a Vec<i32>
-    let mut non_null_slots: Vec<i32> = used_slots.iter().filter_map(|&slot| slot).collect();
 
-    non_null_slots.sort();
-    let mut new_slot: u32 = 0;
+    // Get current device slot record, if exists
+    let existing_ds = device_slot::get(&dev_eui).await;
+    let (new_slot, dev_addr): (i32, DevAddr);
+
+    // Determine if new slot needs to be calculated or reused
+    if let Ok(existing_ds) = existing_ds {
+        if existing_ds.multicast_group_id == multicast_group_id {
+            // Reuse existing slot and regenerate device address
+            new_slot = existing_ds.slot.expect("Existing slot must be present");
+            dev_addr = regenerate_dev_addr_for_slot(new_slot, max_slot_count);
+        } else {
+            // Find new slot and generate device address
+            (new_slot, dev_addr) =
+                calculate_new_slot_and_dev_addr(&mut conn, multicast_group_id, max_slot_count)
+                    .await?;
+        }
+        // Update existing record with new slot or multicast group
+        let new_ds = DeviceSlot {
+            dev_eui,
+            dev_addr: Some(dev_addr),
+            slot: Some(new_slot),
+            multicast_group_id,
+            created_at: Utc::now(),
+        };
+        device_slot::update(new_ds).await?;
+    } else {
+        // No existing record, find new slot and generate device address
+        (new_slot, dev_addr) =
+            calculate_new_slot_and_dev_addr(&mut conn, multicast_group_id, max_slot_count).await?;
+        // Create new record
+        let new_ds = DeviceSlot {
+            dev_eui,
+            dev_addr: Some(dev_addr),
+            slot: Some(new_slot),
+            multicast_group_id,
+            created_at: Utc::now(),
+        };
+        device_slot::create(new_ds).await?;
+    }
+
+    Ok(dev_addr)
+}
+
+async fn calculate_new_slot_and_dev_addr(
+    conn: &mut AsyncPgPoolConnection,
+    multicast_group_id: Uuid,
+    max_slot_count: i32,
+) -> Result<(i32, DevAddr)> {
+    let used_slots: Vec<i32> = schema_device_slot::table
+        .filter(schema_device_slot::dsl::multicast_group_id.eq(multicast_group_id))
+        .select(schema_device_slot::dsl::slot)
+        .load::<Option<i32>>(conn)
+        .await?
+        .into_iter()
+        .filter_map(|slot| slot)
+        .collect();
+
+    let mut new_slot = 0;
     for i in 0..max_slot_count {
-        if !non_null_slots.contains(&(i as i32)) {
+        if !used_slots.contains(&i) {
             new_slot = i;
             break;
         }
     }
-
-    // If all slots are used, start over from 0
-    if new_slot == 0 && non_null_slots.len() == max_slot_count as usize {
-        new_slot = ((*non_null_slots.iter().max().unwrap_or(&0) + 1) as u32) % max_slot_count;
+    // Fallback: use the next available slot after the last one, if all are taken
+    if new_slot == 0 && used_slots.len() == max_slot_count as usize {
+        new_slot = ((*used_slots.iter().max().unwrap_or(&0) + 1) as i32) % max_slot_count;
     }
 
-    // Create and save the new device slot record
-    let new_device_slot = device_slot::DeviceSlot {
-        dev_eui,
-        dev_addr: Some(new_dev_addr.clone()),
-        slot: Some(new_slot as i32),
-        created_at: Utc::now(),
-    };
-
-    device_slot::create(new_device_slot).await?;
-
-    Ok(new_dev_addr)
+    let dev_addr = regenerate_dev_addr_for_slot(new_slot, max_slot_count);
+    Ok((new_slot, dev_addr))
 }
 
-// pub async fn get_random_dev_addr_slot(dev_eui: EUI64) -> Result<DevAddr> {
-//     let mut conn = get_async_db_conn().await?;
+fn regenerate_dev_addr_for_slot(slot: i32, max_slot_count: i32) -> DevAddr {
+    // Get new random DevAddr
+    let mut dev_addr: DevAddr = generate_dev_addr();
 
-//     // Check if the device already has a slot and address
-//     if let Ok(existing_slot) = device_slot::get(&dev_eui).await {
-//         // If exists, return the existing DevAddr
-//         info!(
-//             dev_eui = %dev_eui,
-//             slot = existing_slot.slot,
-//             "Device already has an assigned slot and DevAddr"
-//         );
-//         return match existing_slot.dev_addr {
-//             Some(dev_addr) => Ok(dev_addr),
-//             None => Err(Error::msg("Device address not found".to_string())),
-//         };        
-//     }
+    // Keep regenerating DevAddr until satisfies formula
+    // slot = (int(crypto_hash(DevAddr))) % max_slot_count
+    loop {
+        let mut hasher = Sha256::new();
+        hasher.update(&dev_addr.to_be_bytes());
+        let sha256_hash = hasher.finalize();
 
-//     // Fetch the max_slot_count from the tenant based on dev_eui
-//     let max_slot_count_result = device::table
-//         .inner_join(application::table.on(application::dsl::id.eq(device::dsl::application_id)))
-//         .inner_join(tenant::table.on(tenant::dsl::id.eq(application::dsl::tenant_id)))
-//         .select(tenant::dsl::max_slot_count)
-//         .filter(device::dsl::dev_eui.eq(dev_eui))
-//         .first::<i32>(&mut conn)
-//         .await;
+        // let big_int = BigUint::from_bytes_be(&sha256_hash);
+        // let hash_int = &big_int % (max_slot_count as u32);
 
-//     // Check the result and convert accordingly
-//     let max_slot_count = match max_slot_count_result {
-//         Ok(count) => if count == 0 { 64 } else { count as u32 },
-//         Err(e) => return Err(Error::msg(format!("Failed to fetch max slot count for device {}: {}", dev_eui.to_string(), e))),
-//     };
+        // // If slot matches, break the loop
+        // if hash_int == BigUint::from(slot as u32) {
+        //     break;
+        // }
+        let mut big_int = 0u64;
+        for &byte in sha256_hash.iter().take(8) {
+            big_int = (big_int << 8) | byte as u64;
+        }
+        
+        let hash_int = (big_int % max_slot_count as u64) as i32;
 
-//     loop {
-//         // If no existing slot and address, generate a new DevAddr
-//         let dev_addr = generate_dev_addr().await?;
+        if hash_int % max_slot_count == slot {
+            break;
+        }
 
-//         // Calculate the new slot number
-//         let sum: u32 = dev_addr.clone().into_iter().map(|x| x as u32).sum();
-//         let generated_slot: u32 = sum % max_slot_count;
+        dev_addr = generate_dev_addr();
+    }
+    dev_addr
+}
 
-//         match CURRENT_SLOT == generated_slot {
-//             true => {
-//                 // define the next time slot to generate
-//                 CURRENT_SLOT = CURRENT_SLOT + 1;
-//                 // print the generated time slot and devaddr value
-//                 println!("{:?} connected, time slot is: {}", dev_addr.clone(), generated_slot);
-//                 break;
-//             }
-//             false => {
-//                 None;
-//             }
-//         };
-//     }
-
-
-//     // Create and save the new device slot record
-//     let new_device_slot = device_slot::DeviceSlot {
-//         dev_eui,
-//         dev_addr: Some(dev_addr.clone()),
-//         slot: Some(generated_slot as i32),
-//         created_at: Utc::now(),
-//     };
-
-//     device_slot::create(new_device_slot).await?;
-
-//     Ok(dev_addr)
-// }
-
-async fn generate_dev_addr() -> Result<DevAddr> {
+// Function to generate random bytes for DevAddr
+fn generate_dev_addr() -> DevAddr {
     let conf = config::get();
     let mut rng = rand::thread_rng();
 
     // Get configured DevAddr prefixes.
     let prefixes = if conf.network.dev_addr_prefixes.is_empty() {
         vec![conf.network.net_id.dev_addr_prefix()]
-    }
-    else {
+    } else {
         conf.network.dev_addr_prefixes.clone()
     };
 
     // Pick a random one (in case multiple prefixes are configured).
     let prefix = *prefixes.choose(&mut rng).unwrap();
 
-    // Generate random DevAddr.
-    let mut dev_addr: [u8; 4] = [0; 4];
-    rng.fill_bytes(&mut dev_addr);
-    #[cfg(test)]
-    {
-        dev_addr = [1, 2, 3, 4];
-    }
-    let mut dev_addr = DevAddr::from_be_bytes(dev_addr);
+    // Generate a random DevAddr
+    let mut dev_addr_bytes: [u8; 4] = [0; 4];
+    rng.fill_bytes(&mut dev_addr_bytes);
 
-    // Set DevAddr prefix.
+    let mut dev_addr = DevAddr::from_be_bytes(dev_addr_bytes);
     dev_addr.set_dev_addr_prefix(prefix);
 
-    Ok(dev_addr)
+    dev_addr
 }
 
-
-
-
-
+// Old implementation
 // project/chirpstack/src/devaddr.rs
 pub fn get_random_dev_addr() -> DevAddr {
     // check whether we still have any time slots left
@@ -212,8 +195,7 @@ pub fn get_random_dev_addr() -> DevAddr {
     // Get configured DevAddr prefixes.
     let prefixes = if conf.network.dev_addr_prefixes.is_empty() {
         vec![conf.network.net_id.dev_addr_prefix()]
-    }
-    else {
+    } else {
         conf.network.dev_addr_prefixes.clone()
     };
 
@@ -236,7 +218,7 @@ pub fn get_random_dev_addr() -> DevAddr {
     //dbg!(dev_addr.clone());
     // print the address prefix (AddrPrefix)
     //dbg!(prefix);
-    
+
     // find the slot of the DevAddr
 
     // hash function
@@ -251,7 +233,11 @@ pub fn get_random_dev_addr() -> DevAddr {
                     // define the next time slot to generate
                     CURRENT_SLOT = CURRENT_SLOT + 1;
                     // print the generated time slot and devaddr value
-                    println!("{:?} connected, time slot is: {}", dev_addr.clone(), generated_slot);
+                    println!(
+                        "{:?} connected, time slot is: {}",
+                        dev_addr.clone(),
+                        generated_slot
+                    );
                     break;
                 }
                 false => {
@@ -259,7 +245,6 @@ pub fn get_random_dev_addr() -> DevAddr {
                 }
             };
         }
-        
     }
     dev_addr
 }

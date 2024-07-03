@@ -196,6 +196,24 @@ impl DevAddr {
         self.0 = devaddr.to_be_bytes();
     }
 
+    // pub fn set_dev_addr_prefix_and_slot(&mut self, prefix: DevAddrPrefix, slot: i32) {
+    //     // convert devaddr to u32
+    //     let mut devaddr = u32::from_be_bytes(self.0);
+    
+    //     // Clean the prefix bits and the slot area (11 least significant bits)
+    //     let prefix_size = prefix.size(); // number of bits in prefix
+    //     let mask = (u32::MAX >> prefix_size) << 11; // clears bits for prefix and the 11 bit slot
+    //     devaddr &= !mask;
+    
+    //     // Set the prefix
+    //     devaddr |= u32::from_be_bytes(prefix.prefix());
+    
+    //     // Set the slot in the 11 least significant bits
+    //     devaddr |= (slot as u32) & 0x07FF; // ensure slot is within 11 bits
+    
+    //     self.0 = devaddr.to_be_bytes();
+    // }
+
     fn get_nwkid(&self, prefix_length: u32, nwkid_bits: u32) -> Vec<u8> {
         // convert devaddr to u32
         let mut temp = u32::from_be_bytes(self.0);
@@ -218,6 +236,12 @@ impl DevAddr {
     }
 }
 
+// Used to convert DevAddr into a shared reference
+impl AsRef<[u8]> for DevAddr {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
+}
 
 // an implementation function written by Aidar.
 // Used to iterate over values of the DevAddr.

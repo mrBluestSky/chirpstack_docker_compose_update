@@ -314,8 +314,11 @@ message DeviceSlot {
   // Device slot in time frame.
   uint32 slot = 3;
 
+  // Multicst-group ID (UUID) the device belongs to.
+  string multicast_group_id = 4;
+
   // Created at timestamp.
-  google.protobuf.Timestamp created_at = 4;
+  google.protobuf.Timestamp created_at = 5;
 }
 
 message CreateDeviceRequest {
@@ -431,8 +434,11 @@ message GetDeviceSlotResponse {
   // Device slot in time frame.
   uint32 slot = 2;
 
+  // Multicst-group ID (UUID) to filter devices on.
+  string multicast_group_id = 3;
+
   // Created at timestamp.
-  google.protobuf.Timestamp created_at = 3;
+  google.protobuf.Timestamp created_at = 4;
 }
 
 message UpdateDeviceSlotRequest {

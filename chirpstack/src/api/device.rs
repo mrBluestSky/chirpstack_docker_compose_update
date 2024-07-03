@@ -474,11 +474,14 @@ impl DeviceService for Device {
             .await?;
 
         let dev_addr = DevAddr::from_str(&req_ds.dev_addr).map_err(|e| e.status())?;
+        let multicast_group_id = Uuid::from_str(&req_ds.multicast_group_id).map_err(|e| e.status())?;
+
 
         let ds = device_slot::DeviceSlot {
             dev_eui,
             dev_addr: Some(dev_addr),
             slot: Some(req_ds.slot as i32),
+            multicast_group_id,
             created_at: chrono::Utc::now(),
         };
 
@@ -516,6 +519,7 @@ impl DeviceService for Device {
         let response = api::GetDeviceSlotResponse {
             dev_addr,
             slot,
+            multicast_group_id: ds.multicast_group_id.to_string(),
             created_at: Some(helpers::datetime_to_prost_timestamp(&ds.created_at)),
         };
 
@@ -545,6 +549,7 @@ impl DeviceService for Device {
             dev_eui: ds.dev_eui,
             dev_addr: ds.dev_addr,
             slot: Some(req_ds.slot as i32),
+            multicast_group_id: ds.multicast_group_id,
             created_at: ds.created_at,
         };
 
