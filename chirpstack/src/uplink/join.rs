@@ -25,7 +25,7 @@ use crate::storage::{
     device::{self, DeviceClass},
     device_keys, device_profile, device_queue,
     error::Error as StorageError,
-    helpers::{get_all_device_data, get_multicast_group_index},
+    helpers::{get_all_device_data, get_channel_index},
     metrics, tenant,
 };
 use crate::{config, devaddr::get_random_dev_addr_slot, downlink, integration, region, stream};
@@ -775,8 +775,7 @@ impl JoinRequest {
         let device_profile = self.device_profile.as_ref().unwrap();
 
         // map multicast group index to channel index
-        let multicast_group_index = get_multicast_group_index(device.dev_eui).await?;
-        println!("Multicast group index is {} for dev_eui {}", multicast_group_index, device.dev_eui);
+        let channel_index = get_channel_index(device.dev_eui).await?;
 
         let mut ds = internal::DeviceSession {
             region_config_id: self.uplink_frame_set.region_config_id.clone(),
@@ -795,7 +794,7 @@ impl JoinRequest {
             //     .iter()
             //     .map(|i| *i as u32)
             //     .collect(),
-            enabled_uplink_channel_indices: vec![multicast_group_index as u32],
+            enabled_uplink_channel_indices: vec![channel_index as u32],
             skip_f_cnt_check: device.skip_fcnt_check,
             ..Default::default()
         };
