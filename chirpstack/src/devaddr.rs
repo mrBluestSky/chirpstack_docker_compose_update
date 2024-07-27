@@ -226,25 +226,22 @@ pub fn get_random_dev_addr() -> DevAddr {
     let generated_slot: u32 = sum % NUMBER_OF_SLOTS;
 
     // regenerate the dev_addr until the correct one is generated.
-    loop {
-        unsafe {
-            match CURRENT_SLOT == generated_slot {
-                true => {
-                    // define the next time slot to generate
-                    CURRENT_SLOT = CURRENT_SLOT + 1;
-                    // print the generated time slot and devaddr value
-                    println!(
-                        "{:?} connected, time slot is: {}",
-                        dev_addr.clone(),
-                        generated_slot
-                    );
-                    break;
-                }
-                false => {
-                    return get_random_dev_addr();
-                }
-            };
-        }
+    unsafe {
+        match CURRENT_SLOT == generated_slot {
+            true => {
+                // define the next time slot to generate
+                CURRENT_SLOT = CURRENT_SLOT + 1;
+                // print the generated time slot and devaddr value
+                println!(
+                    "{:?} connected, time slot is: {}",
+                    dev_addr.clone(),
+                    generated_slot
+                );
+            }
+            false => {
+                return get_random_dev_addr();
+            }
+        };
     }
     dev_addr
 }

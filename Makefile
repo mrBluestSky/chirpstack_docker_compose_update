@@ -77,7 +77,7 @@ test-all:
 compile-everything:
 	cd api && make grpc-web
 	cd ui && make build
-	docker compose up -d &&
+	docker compose up -d 
 	cd api && make rust
 	cd backend && cargo test
 	cd chirpstack && make test
