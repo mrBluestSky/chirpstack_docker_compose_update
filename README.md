@@ -59,6 +59,14 @@ Or if you do not have Nix installed, execute the following command:
 make docker-devshell
 ```
 
+### Do everything below
+
+If you want to automatically do all the steps below with make dist, enter this command:
+
+```bash
+make compile-everything
+```
+
 ### Building the UI
 
 To build the ChirpStack UI, execute the following command:
