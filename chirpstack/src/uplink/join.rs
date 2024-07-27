@@ -801,7 +801,10 @@ impl JoinRequest {
 
         device_profile.reset_session_to_boot_params(&mut ds);
 
-        println!("in set_device_session: enabled channels for device {}", device.dev_eui);
+        println!(
+            "in set_device_session: enabled channels for device {}",
+            device.dev_eui
+        );
         for ch in ds.enabled_uplink_channel_indices.clone().into_iter() {
             println!("{}", ch);
         }

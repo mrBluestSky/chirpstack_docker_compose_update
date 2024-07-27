@@ -135,7 +135,7 @@ fn regenerate_dev_addr_for_slot(slot: i32, max_slot_count: i32) -> DevAddr {
         for &byte in sha256_hash.iter().take(8) {
             big_int = (big_int << 8) | byte as u64;
         }
-        
+
         let hash_int = (big_int % max_slot_count as u64) as i32;
 
         if hash_int % max_slot_count == slot {

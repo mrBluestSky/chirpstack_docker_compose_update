@@ -84,7 +84,7 @@ diesel::table! {
     device_slot (dev_eui) {
         dev_eui -> Bytea,
         dev_addr -> Nullable<Bytea>,
-        slot -> Nullable<Int4>, 
+        slot -> Nullable<Int4>,
         multicast_group_id -> Uuid,
         created_at -> Timestamptz,
     }

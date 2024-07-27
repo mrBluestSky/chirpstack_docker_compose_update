@@ -5,7 +5,7 @@ use diesel_async::RunQueryDsl;
 use tracing::info;
 use uuid::Uuid;
 
-use lrwn::{EUI64, DevAddr};
+use lrwn::{DevAddr, EUI64};
 
 use super::error::Error;
 use super::get_async_db_conn;
