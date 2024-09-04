@@ -35,6 +35,7 @@ impl Default for DeviceSlot {
     }
 }
 
+// Creates an record in the device_slot table with a given information about the record in the ds variable
 pub async fn create(ds: DeviceSlot) -> Result<DeviceSlot, Error> {
     let ds: DeviceSlot = diesel::insert_into(device_slot::table)
         .values(&ds)
@@ -48,6 +49,7 @@ pub async fn create(ds: DeviceSlot) -> Result<DeviceSlot, Error> {
     Ok(ds)
 }
 
+// return a device's time slot for its dev_eui value
 pub async fn get(dev_eui: &EUI64) -> Result<DeviceSlot, Error> {
     let ds = device_slot::dsl::device_slot
         .find(&dev_eui)
@@ -57,6 +59,7 @@ pub async fn get(dev_eui: &EUI64) -> Result<DeviceSlot, Error> {
     Ok(ds)
 }
 
+// give a new device_slot value for a given end device
 pub async fn update(ds: DeviceSlot) -> Result<DeviceSlot, Error> {
     let ds: DeviceSlot = diesel::update(device_slot::dsl::device_slot.find(&ds.dev_eui))
         .set(&ds)
@@ -70,6 +73,7 @@ pub async fn update(ds: DeviceSlot) -> Result<DeviceSlot, Error> {
     Ok(ds)
 }
 
+// delete a device slot instance attached to an end device
 pub async fn delete(dev_eui: &EUI64) -> Result<(), Error> {
     let ra = diesel::delete(device_slot::dsl::device_slot.find(&dev_eui))
         .execute(&mut get_async_db_conn().await?)
