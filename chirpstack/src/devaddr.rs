@@ -20,10 +20,10 @@ use crate::storage::schema::{
 };
 use crate::storage::{get_async_db_conn, AsyncPgPoolConnection};
 
-
+// this is the main caller function in this file that calls other functions below
 pub async fn get_random_dev_addr_slot(dev_eui: EUI64) -> Result<DevAddr> {
     // The function get_async_db_conn() is defined in ./chirpstack/src/storage/mod.rs
-    // 
+    // it connects asynchroninously to the program's postgres database in a safe way
     let mut conn = get_async_db_conn().await?;
 
     // Fetch multicast group ID and max slot count
@@ -32,6 +32,7 @@ pub async fn get_random_dev_addr_slot(dev_eui: EUI64) -> Result<DevAddr> {
         .select(multicast_group_device::dsl::multicast_group_id)
         .first(&mut conn)
         .await?;
+    // get the total number of time slots stored in the tenant table
     let max_slot_count = device::table
         .inner_join(application::table.on(application::dsl::id.eq(device::dsl::application_id)))
         .inner_join(tenant::table.on(tenant::dsl::id.eq(application::dsl::tenant_id)))
@@ -41,11 +42,13 @@ pub async fn get_random_dev_addr_slot(dev_eui: EUI64) -> Result<DevAddr> {
         .await?;
 
     // Get current device slot record, if exists
+    // the datatype of the existing_ds variable is Result<DeviceSlot, Error>. DeviceSlot contains a single record for the device_slot database table.
     let existing_ds = device_slot::get(&dev_eui).await;
     let (new_slot, dev_addr): (i32, DevAddr);
 
     // Determine if new slot needs to be calculated or reused
     if let Ok(existing_ds) = existing_ds {
+        // Check whether a given end device belongs to the multicast group where it used to belong when we last calculate its time-slot?
         if existing_ds.multicast_group_id == multicast_group_id {
             // Reuse existing slot and regenerate device address
             new_slot = existing_ds.slot.expect("Existing slot must be present");
