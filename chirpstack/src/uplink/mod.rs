@@ -80,6 +80,7 @@ pub struct RelayContext {
 }
 
 #[derive(Clone)]
+// contains a complete data of an uplink frame received from an end device
 pub struct UplinkFrameSet {
     pub uplink_set_id: Uuid,
     pub dr: u8,

@@ -6,6 +6,8 @@ use uuid::Uuid;
 use chirpstack_api::api;
 use chirpstack_api::api::tenant_service_server::TenantService;
 
+// ./chirpstack/src/api/auth/validator.rs is super::auth::validator
+// validator::RequestValidator is an empty struct with lots of traits connected to databases
 use super::auth::{validator, AuthID};
 use super::error::ToStatus;
 use super::helpers;
@@ -23,6 +25,7 @@ impl Tenant {
 
 #[tonic::async_trait]
 impl TenantService for Tenant {
+    // I guess this function creates an instance of a tenant
     async fn create(
         &self,
         request: Request<api::CreateTenantRequest>,

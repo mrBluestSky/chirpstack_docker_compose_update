@@ -72,3 +72,20 @@ test-all:
 	cd chirpstack-integration && cargo test
 	cd lrwn && make test
 	cd lrwn-filters && make test
+
+# does everything above
+compile-everything:
+	cd api && make grpc-web
+	cd ui && make build
+	docker compose up -d 
+	cd api && make rust
+	cd backend && cargo test
+	cd chirpstack && make test
+	cd lrwn && make test
+	cd lrwn-filters && make test
+	cargo install cross --version 0.2.5
+	cargo install diesel_cli --version 2.1.1 --no-default-features --features postgres
+	cargo install cargo-deb --version 1.43.1
+	cargo install cargo-generate-rpm --version 0.12.1
+	cd api && make grpc-web
+	cd chirpstack && make dist

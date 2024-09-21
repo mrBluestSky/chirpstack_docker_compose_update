@@ -3,7 +3,7 @@ use diesel_async::RunQueryDsl;
 
 use super::schema::{application, device, device_profile, tenant};
 use super::{
-    application::Application, device::Device, device_profile::DeviceProfile, tenant::Tenant
+    application::Application, device::Device, device_profile::DeviceProfile, tenant::Tenant,
 };
 use super::{error::Error, get_async_db_conn};
 use lrwn::EUI64;

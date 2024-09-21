@@ -474,8 +474,8 @@ impl DeviceService for Device {
             .await?;
 
         let dev_addr = DevAddr::from_str(&req_ds.dev_addr).map_err(|e| e.status())?;
-        let multicast_group_id = Uuid::from_str(&req_ds.multicast_group_id).map_err(|e| e.status())?;
-
+        let multicast_group_id =
+            Uuid::from_str(&req_ds.multicast_group_id).map_err(|e| e.status())?;
 
         let ds = device_slot::DeviceSlot {
             dev_eui,
@@ -509,12 +509,15 @@ impl DeviceService for Device {
         let slot: u32 = match ds.slot {
             Some(s) => s as u32,
             None => return Err(Status::invalid_argument("Slot is missing")),
-        };    
+        };
         let dev_addr = match ds.dev_addr {
             Some(addr) => addr.to_string(),
-            None => return Err(Status::invalid_argument("DevAddr is missing or not specified")),
+            None => {
+                return Err(Status::invalid_argument(
+                    "DevAddr is missing or not specified",
+                ))
+            }
         };
-            
 
         let response = api::GetDeviceSlotResponse {
             dev_addr,
@@ -553,7 +556,9 @@ impl DeviceService for Device {
             created_at: ds.created_at,
         };
 
-        device_slot::update(updated_ds).await.map_err(|e| e.status())?;
+        device_slot::update(updated_ds)
+            .await
+            .map_err(|e| e.status())?;
 
         Ok(Response::new(()))
     }
@@ -573,7 +578,9 @@ impl DeviceService for Device {
             )
             .await?;
 
-            device_slot::delete(&dev_eui).await.map_err(|e| e.status())?;
+        device_slot::delete(&dev_eui)
+            .await
+            .map_err(|e| e.status())?;
 
         Ok(Response::new(()))
     }

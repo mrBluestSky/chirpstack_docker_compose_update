@@ -53,6 +53,7 @@ pub struct JoinRequest {
 }
 
 impl JoinRequest {
+    // notify in logs if an error happens while handling a join request
     pub async fn handle(ufs: UplinkFrameSet) {
         let span = span!(Level::INFO, "join_request", dev_eui = tracing::field::Empty);
 
@@ -86,6 +87,7 @@ impl JoinRequest {
         }
     }
 
+    // fill the join request struct with needed data and does needed manipulations to do the join event
     async fn _handle(ufs: UplinkFrameSet) -> Result<()> {
         let mut ctx = JoinRequest {
             uplink_frame_set: ufs,
