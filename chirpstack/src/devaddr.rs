@@ -185,6 +185,8 @@ fn generate_dev_addr() -> DevAddr {
 
 // Old implementation
 // project/chirpstack/src/devaddr.rs
+const NUMBER_OF_SLOTS: u32 = 64;
+static mut CURRENT_SLOT: u32 = 0;
 pub fn get_random_dev_addr() -> DevAddr {
     // check whether we still have any time slots left
     unsafe {
