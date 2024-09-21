@@ -552,41 +552,6 @@ impl Configuration {
                         enabled: true,
                         user_defined: false,
                     },
-                    Channel {
-                        frequency: 867100000,
-                        min_dr: 0,
-                        max_dr: 5,
-                        enabled: true,
-                        user_defined: false,
-                    },
-                    Channel {
-                        frequency: 867300000,
-                        min_dr: 0,
-                        max_dr: 5,
-                        enabled: true,
-                        user_defined: false,
-                    },
-                    Channel {
-                        frequency: 867500000,
-                        min_dr: 0,
-                        max_dr: 5,
-                        enabled: true,
-                        user_defined: false,
-                    },
-                    Channel {
-                        frequency: 867700000,
-                        min_dr: 0,
-                        max_dr: 5,
-                        enabled: true,
-                        user_defined: false,
-                    },
-                    Channel {
-                        frequency: 867900000,
-                        min_dr: 0,
-                        max_dr: 5,
-                        enabled: true,
-                        user_defined: false,
-                    },
                 ],
                 downlink_channels: vec![
                     Channel {
@@ -605,41 +570,6 @@ impl Configuration {
                     },
                     Channel {
                         frequency: 868500000,
-                        min_dr: 0,
-                        max_dr: 5,
-                        enabled: true,
-                        user_defined: false,
-                    },
-                    Channel {
-                        frequency: 867100000,
-                        min_dr: 0,
-                        max_dr: 5,
-                        enabled: true,
-                        user_defined: false,
-                    },
-                    Channel {
-                        frequency: 867300000,
-                        min_dr: 0,
-                        max_dr: 5,
-                        enabled: true,
-                        user_defined: false,
-                    },
-                    Channel {
-                        frequency: 867500000,
-                        min_dr: 0,
-                        max_dr: 5,
-                        enabled: true,
-                        user_defined: false,
-                    },
-                    Channel {
-                        frequency: 867700000,
-                        min_dr: 0,
-                        max_dr: 5,
-                        enabled: true,
-                        user_defined: false,
-                    },
-                    Channel {
-                        frequency: 867900000,
                         min_dr: 0,
                         max_dr: 5,
                         enabled: true,
@@ -784,7 +714,7 @@ impl Region for Configuration {
         device_enabled_channels: &[usize],
     ) -> Vec<LinkADRReqPayload> {
         self.base
-            .custom_get_link_adr_req_payloads_for_enabled_uplink_channel_indices(device_enabled_channels)
+            .get_link_adr_req_payloads_for_enabled_uplink_channel_indices(device_enabled_channels)
     }
 
     fn get_enabled_uplink_channel_indices_for_link_adr_payloads(

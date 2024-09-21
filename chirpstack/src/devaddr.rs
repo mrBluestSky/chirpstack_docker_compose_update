@@ -18,73 +18,83 @@ use crate::storage::device_slot::DeviceSlot;
 use crate::storage::schema::{
     application, device, device_slot as schema_device_slot, multicast_group_device, tenant,
 };
-use crate::storage::{get_async_db_conn, AsyncPgPoolConnection};
+use crate::storage::get_async_db_conn;
+use diesel_async::AsyncPgConnection;
+use crate::storage::error::Error;
 
 const NUMBER_OF_SLOTS: u32 = 64;
 static mut CURRENT_SLOT: u32 = 0;
 
 pub async fn get_random_dev_addr_slot(dev_eui: EUI64) -> Result<DevAddr> {
     let mut conn = get_async_db_conn().await?;
+    let dev_addr: DevAddr = conn
+        .build_transaction()
+        .run::<DevAddr, Error, _>(|conn| {
+            Box::pin(async move {
+                // Fetch multicast group ID and max slot count
+                let multicast_group_id: Uuid = multicast_group_device::table
+                .filter(multicast_group_device::dsl::dev_eui.eq(dev_eui))
+                .select(multicast_group_device::dsl::multicast_group_id)
+                .first(conn)
+                .await?;
 
-    // Fetch multicast group ID and max slot count
-    let multicast_group_id: Uuid = multicast_group_device::table
-        .filter(multicast_group_device::dsl::dev_eui.eq(dev_eui))
-        .select(multicast_group_device::dsl::multicast_group_id)
-        .first(&mut conn)
-        .await?;
-    let max_slot_count = device::table
-        .inner_join(application::table.on(application::dsl::id.eq(device::dsl::application_id)))
-        .inner_join(tenant::table.on(tenant::dsl::id.eq(application::dsl::tenant_id)))
-        .select(tenant::dsl::max_slot_count)
-        .filter(device::dsl::dev_eui.eq(dev_eui))
-        .first::<i32>(&mut conn)
-        .await?;
-
-    // Get current device slot record, if exists
-    let existing_ds = device_slot::get(&dev_eui).await;
-    let (new_slot, dev_addr): (i32, DevAddr);
-
-    // Determine if new slot needs to be calculated or reused
-    if let Ok(existing_ds) = existing_ds {
-        if existing_ds.multicast_group_id == multicast_group_id {
-            // Reuse existing slot and regenerate device address
-            new_slot = existing_ds.slot.expect("Existing slot must be present");
-            dev_addr = regenerate_dev_addr_for_slot(new_slot, max_slot_count);
-        } else {
-            // Find new slot and generate device address
-            (new_slot, dev_addr) =
-                calculate_new_slot_and_dev_addr(&mut conn, multicast_group_id, max_slot_count)
+                let max_slot_count = device::table
+                    .inner_join(application::table.on(application::dsl::id.eq(device::dsl::application_id)))
+                    .inner_join(tenant::table.on(tenant::dsl::id.eq(application::dsl::tenant_id)))
+                    .select(tenant::dsl::max_slot_count)
+                    .filter(device::dsl::dev_eui.eq(dev_eui))
+                    .first::<i32>(conn)
                     .await?;
-        }
-        // Update existing record with new slot or multicast group
-        let new_ds = DeviceSlot {
-            dev_eui,
-            dev_addr: Some(dev_addr),
-            slot: Some(new_slot),
-            multicast_group_id,
-            created_at: Utc::now(),
-        };
-        device_slot::update(new_ds).await?;
-    } else {
-        // No existing record, find new slot and generate device address
-        (new_slot, dev_addr) =
-            calculate_new_slot_and_dev_addr(&mut conn, multicast_group_id, max_slot_count).await?;
-        // Create new record
-        let new_ds = DeviceSlot {
-            dev_eui,
-            dev_addr: Some(dev_addr),
-            slot: Some(new_slot),
-            multicast_group_id,
-            created_at: Utc::now(),
-        };
-        device_slot::create(new_ds).await?;
-    }
+
+                // Get current device slot record, if exists
+                let existing_ds = device_slot::get(&dev_eui).await;
+                let (new_slot, dev_addr): (i32, DevAddr);
+
+                // Determine if new slot needs to be calculated or reused
+                if let Ok(existing_ds) = existing_ds {
+                    if existing_ds.multicast_group_id == multicast_group_id {
+                        // Reuse existing slot and regenerate device address
+                        new_slot = existing_ds.slot.expect("Existing slot must be present");
+                        dev_addr = regenerate_dev_addr_for_slot(new_slot, max_slot_count);
+                    } else {
+                        // Find new slot and generate device address
+                        (new_slot, dev_addr) =
+                            calculate_new_slot_and_dev_addr(conn, multicast_group_id, max_slot_count)
+                                .await?;
+                    }
+                    // Update existing record with new slot or multicast group
+                    let new_ds = DeviceSlot {
+                        dev_eui,
+                        dev_addr: Some(dev_addr),
+                        slot: Some(new_slot),
+                        multicast_group_id,
+                        created_at: Utc::now(),
+                    };
+                    device_slot::update(new_ds).await?;
+                } else {
+                    // No existing record, find new slot and generate device address
+                    (new_slot, dev_addr) =
+                        calculate_new_slot_and_dev_addr(conn, multicast_group_id, max_slot_count).await?;
+                    // Create new record
+                    let new_ds = DeviceSlot {
+                        dev_eui,
+                        dev_addr: Some(dev_addr),
+                        slot: Some(new_slot),
+                        multicast_group_id,
+                        created_at: Utc::now(),
+                    };
+                    device_slot::create(new_ds).await?;
+                }
+
+                Ok(dev_addr)
+            })
+        }).await?;
 
     Ok(dev_addr)
 }
 
 async fn calculate_new_slot_and_dev_addr(
-    conn: &mut AsyncPgPoolConnection,
+    conn: &mut AsyncPgConnection,
     multicast_group_id: Uuid,
     max_slot_count: i32,
 ) -> Result<(i32, DevAddr)> {

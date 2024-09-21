@@ -1159,7 +1159,7 @@ impl Data {
             .collect();
 
         if let Some(block) =
-            maccommand::new_channel::request(1, &current_channels, &wanted_channels)
+            maccommand::new_channel::request(3, &current_channels, &wanted_channels)
         {
             mac_command::set_pending(&self.device.dev_eui, lrwn::CID::NewChannelReq, &block)
                 .await?;
@@ -1180,21 +1180,11 @@ impl Data {
             .map(|i| *i as usize)
             .collect();
 
-        println!("enabled channels for device {}", self.device.dev_eui);
-        for ch in enabled_uplink_channel_indices.clone().into_iter() {
-            println!("{}", ch);
-        }
-
         let mut payloads = self
             .region_conf
             .get_link_adr_req_payloads_for_enabled_uplink_channel_indices(
                 &enabled_uplink_channel_indices,
             );
-
-        println!("payloads:");
-        for p in payloads.clone().into_iter() {
-            println!("chMask: {:?}", p.ch_mask);
-        }
 
         // Nothing to do.
         if payloads.is_empty() {
